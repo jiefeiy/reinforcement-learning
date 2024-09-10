@@ -8,9 +8,8 @@ import torch.nn.functional as F
 
 """
 references:
-[1] reinforce algorithm: https://hrl.boyuai.com/chapter/2/%E7%AD%96%E7%95%A5%E6%A2%AF%E5%BA%A6%E7%AE%97%E6%B3%95
-[2] https://github.com/pytorch/examples/blob/main/reinforcement_learning/reinforce.py
-[3] environment: https://gymnasium.farama.org/environments/classic_control/cart_pole/
+[1] actor-critic algorithm: https://hrl.boyuai.com/chapter/2/actor-critic%E7%AE%97%E6%B3%95
+[2] environment: https://gymnasium.farama.org/environments/classic_control/cart_pole/
 """
 
 
@@ -25,51 +24,70 @@ class PolicyNet(nn.Module):
         return F.softmax(self.fc2(x), dim=-1)
 
 
-class Reinforce:
+class ValueNet(nn.Module):
+    def __init__(self, state_dim, hidden_dim):
+        super(ValueNet, self).__init__()
+        self.fc1 = nn.Linear(state_dim, hidden_dim)
+        self.fc2 = nn.Linear(hidden_dim, 1)
+
+    def forward(self, x):
+        x = F.relu(self.fc1(x))
+        return self.fc2(x)
+
+
+class ActorCritic:
     def __init__(self, state_dim, hidden_dim, action_dim, gamma, device):
-        self.policy_net = PolicyNet(state_dim, hidden_dim, action_dim).to(device)
-        self.optimizer = torch.optim.Adam(self.policy_net.parameters(), lr=3e-3)
+        self.actor = PolicyNet(state_dim, hidden_dim, action_dim).to(device)
+        self.critic = ValueNet(state_dim, hidden_dim).to(device)
+        self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=1e-3)
+        self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=2e-2)
         self.gamma = gamma
         self.device = device
 
     def take_action(self, state):
         state = torch.from_numpy(state).float().to(self.device)
-        probs = self.policy_net(state)
+        probs = self.actor(state)
         action_dist = torch.distributions.Categorical(probs)
         action = action_dist.sample()
         return action.item()
 
     def update(self, transition_dict):
-        reward_list = transition_dict['rewards']
-        state_list = transition_dict['states']
-        action_list = transition_dict['actions']
+        states = torch.from_numpy(np.array(transition_dict['states'])).float().to(self.device)
+        actions = torch.tensor(transition_dict['actions']).view(-1, 1).to(self.device)
+        rewards = torch.from_numpy(np.array(transition_dict['rewards'])).float().view(-1, 1).to(self.device)
+        next_states = torch.from_numpy(np.array(transition_dict['next_states'])).float().to(self.device)
+        dones = torch.tensor(transition_dict['dones'], dtype=torch.float32).view(-1, 1).to(self.device)
 
-        G = 0
-        self.optimizer.zero_grad()
-        for i in reversed(range(len(reward_list))):  # 从最后一步算起
-            reward = reward_list[i]
-            state = torch.from_numpy(state_list[i]).unsqueeze(0).to(self.device)
-            action = torch.tensor(action_list[i]).view(-1, 1).to(self.device)  # torch中的view相当于numpy中reshape
-            log_prob = torch.log(self.policy_net(state).gather(1, action))  # 提取出每个action对应的prob，再取log
-            G = self.gamma * G + reward   # \psi_t := \sum_{s=t}^T \gamma^{s-t} R_s
-            loss = -log_prob * G
-            loss.backward()
-        self.optimizer.step()
+        # temporal difference
+        td_target = rewards + self.gamma * self.critic(next_states) * (1 - dones)
+        td_delta = td_target - self.critic(states)
+
+        log_probs = torch.log(self.actor(states).gather(1, actions))
+        actor_loss = torch.mean(-log_probs * td_delta.detach())
+
+        loss_fn = nn.MSELoss()
+        critic_loss = loss_fn(self.critic(states), td_target.detach())
+
+        self.actor_optimizer.zero_grad()
+        self.critic_optimizer.zero_grad()
+        actor_loss.backward()
+        critic_loss.backward()
+        self.actor_optimizer.step()
+        self.critic_optimizer.step()
 
 
 def train():
-    num_episodes = 1000  # 迭代1000次
+    num_episodes = 1000
     hidden_dim = 128
     gamma = 0.99
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
     env_name = 'CartPole-v1'
     env = gym.make(env_name)
-    env.reset()
 
     state_dim = env.observation_space.shape[0]
     action_dim = env.action_space.n
-    agent = Reinforce(state_dim, hidden_dim, action_dim, gamma, device)
+    agent = ActorCritic(state_dim, hidden_dim, action_dim, gamma, device)
 
     return_list = []
     for i_episode in range(num_episodes):
@@ -115,6 +133,7 @@ def train():
 def test(agent):
     env = gym.make("CartPole-v1", render_mode="human")
     state, _ = env.reset()
+
     r = 0
     for _ in range(500):
         action = agent.take_action(state)
@@ -129,6 +148,22 @@ def test(agent):
 
 if __name__ == '__main__':
     agent = train()
-    test(agent)   # render
+    test(agent)  # render
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
