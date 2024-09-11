@@ -10,6 +10,7 @@ import torch.nn.functional as F
 references:
 [1] actor-critic algorithm: https://hrl.boyuai.com/chapter/2/actor-critic%E7%AE%97%E6%B3%95
 [2] environment: https://gymnasium.farama.org/environments/classic_control/cart_pole/
+[3] classic paper: https://proceedings.neurips.cc/paper_files/paper/1999/file/6449f44a102fde848669bdd9eb6b76fa-Paper.pdf
 """
 
 
@@ -52,22 +53,25 @@ class ActorCritic:
         return action.item()
 
     def update(self, transition_dict):
-        states = torch.from_numpy(np.array(transition_dict['states'])).float().to(self.device)
+        states = torch.from_numpy(np.array(transition_dict['states'])).to(self.device)
         actions = torch.tensor(transition_dict['actions']).view(-1, 1).to(self.device)
         rewards = torch.from_numpy(np.array(transition_dict['rewards'])).float().view(-1, 1).to(self.device)
-        next_states = torch.from_numpy(np.array(transition_dict['next_states'])).float().to(self.device)
+        next_states = torch.from_numpy(np.array(transition_dict['next_states'])).to(self.device)
         dones = torch.tensor(transition_dict['dones'], dtype=torch.float32).view(-1, 1).to(self.device)
 
-        # temporal difference
+        # one-step temporal difference
         td_target = rewards + self.gamma * self.critic(next_states) * (1 - dones)
         td_delta = td_target - self.critic(states)
 
+        # actor loss
         log_probs = torch.log(self.actor(states).gather(1, actions))
-        actor_loss = torch.mean(-log_probs * td_delta.detach())
+        actor_loss = torch.mean(-log_probs * td_delta.detach())    # gradient of actor loss is the policy gradient
 
+        # critic loss
         loss_fn = nn.MSELoss()
         critic_loss = loss_fn(self.critic(states), td_target.detach())
 
+        # update network parameters
         self.actor_optimizer.zero_grad()
         self.critic_optimizer.zero_grad()
         actor_loss.backward()
@@ -77,7 +81,7 @@ class ActorCritic:
 
 
 def train():
-    num_episodes = 1000
+    num_episodes = 1000   # update the network parameters using 'num_episodes' steps
     hidden_dim = 128
     gamma = 0.99
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
@@ -101,7 +105,7 @@ def train():
         }
         state, _ = env.reset()
         done = False
-        for t in range(500):  # for each episode, only run 500 steps so that we don't infinite loop while learning
+        for t in range(500):  # truncation: run 500 steps max so that we don't infinite loop while learning
             action = agent.take_action(state)
             next_state, reward, done, _, _ = env.step(action)
             transition_dict['states'].append(state)
@@ -113,9 +117,8 @@ def train():
             episode_return += reward
             if done:
                 break
-
+        agent.update(transition_dict)  # update one step
         return_list.append(episode_return)
-        agent.update(transition_dict)
 
         # log results
         if (i_episode + 1) % 50 == 0:
@@ -125,7 +128,7 @@ def train():
     plt.plot(episodes_list, return_list)
     plt.xlabel('Episodes')
     plt.ylabel('Returns')
-    plt.title('REINFORCE on {}'.format(env_name))
+    plt.title('Actor-Critic on {}'.format(env_name))
     plt.show()
     return agent
 

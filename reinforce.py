@@ -11,6 +11,7 @@ references:
 [1] reinforce algorithm: https://hrl.boyuai.com/chapter/2/%E7%AD%96%E7%95%A5%E6%A2%AF%E5%BA%A6%E7%AE%97%E6%B3%95
 [2] https://github.com/pytorch/examples/blob/main/reinforcement_learning/reinforce.py
 [3] environment: https://gymnasium.farama.org/environments/classic_control/cart_pole/
+[4] classic paper: https://proceedings.neurips.cc/paper_files/paper/1999/file/464d828b85b0bed98e80ade0a5c43b0f-Paper.pdf
 """
 
 
