@@ -53,10 +53,10 @@ class ActorCritic:
         return action.item()
 
     def update(self, transition_dict):
-        states = torch.from_numpy(np.array(transition_dict['states'])).to(self.device)
+        states = torch.from_numpy(np.array(transition_dict['states'], dtype=np.float32)).to(self.device)
         actions = torch.tensor(transition_dict['actions']).view(-1, 1).to(self.device)
-        rewards = torch.from_numpy(np.array(transition_dict['rewards'])).float().view(-1, 1).to(self.device)
-        next_states = torch.from_numpy(np.array(transition_dict['next_states'])).to(self.device)
+        rewards = torch.from_numpy(np.array(transition_dict['rewards'], dtype=np.float32)).float().view(-1, 1).to(self.device)
+        next_states = torch.from_numpy(np.array(transition_dict['next_states'], dtype=np.float32)).to(self.device)
         dones = torch.tensor(transition_dict['dones'], dtype=torch.float32).view(-1, 1).to(self.device)
 
         # one-step temporal difference
@@ -105,7 +105,7 @@ def train():
         }
         state, _ = env.reset()
         done = False
-        for t in range(500):  # truncation: run 500 steps max so that we don't infinite loop while learning
+        for _ in range(500):  # truncation: run 500 steps max so that we don't infinite loop while learning
             action = agent.take_action(state)
             next_state, reward, done, _, _ = env.step(action)
             transition_dict['states'].append(state)
